@@ -3,7 +3,7 @@ import aiService from "../../../lib/aiService";
 
 export async function POST(request) {
   try {
-    const { sessionId, message, images } = await request.json();
+    const { sessionId, message } = await request.json();
 
     if (!sessionId || !message) {
       return Response.json(
@@ -27,74 +27,21 @@ export async function POST(request) {
       return Response.json({ error: "Character not found" }, { status: 404 });
     }
 
-    // Prepare image data for database storage
-    let imageData = null;
-    if (images && images.length > 0) {
-      imageData = images.map((img) => ({
-        url: img.url, // Cloudinary URL
-        publicId: img.publicId, // Cloudinary public ID
-        mimeType: img.mimeType,
-        size: img.size,
-        name: img.name,
-        uploadedAt: img.uploadedAt,
-        width: img.width || null,
-        height: img.height || null,
-        // Keep base64 data for AI processing (temporary)
-        data: img.data,
-      }));
-    }
-
-    // Add user message to database with complete image data
-    await dbService.addMessage(
-      sessionId,
-      "user",
-      message,
-      null,
-      null, // metadata
-      imageData // images array
-    );
+    // Add user message to database
+    await dbService.addMessage(sessionId, "user", message);
 
     // Get recent conversation history
     const recentMessages = await dbService.getRecentMessages(sessionId, 10);
-
-    // Add image data to the last user message for AI processing
-    if (images && images.length > 0) {
-      console.log(`🖼️ [Chat API] Received ${images.length} images`);
-      images.forEach((img, index) => {
-        console.log(
-          `📷 [Chat API] Image ${index + 1}: ${img.mimeType}, ${Math.round(
-            img.data.length / 1024
-          )}KB`
-        );
-      });
-
-      const lastUserMessage = recentMessages.find(
-        (msg) => msg.role === "user" && msg.content === message
-      );
-      if (lastUserMessage) {
-        lastUserMessage.images = images;
-        console.log(`✅ [Chat API] Added images to message for AI processing`);
-      } else {
-        console.log(
-          `❌ [Chat API] Could not find last user message to attach images`
-        );
-      }
-    }
 
     // Get session memory/context for long conversations
     const sessionMemory = await dbService.getChatMemory(sessionId);
     const sessionContext = sessionMemory ? sessionMemory.summary : null;
 
-    // Check if this conversation contains images
-    const hasImages = images && images.length > 0;
-    console.log(`🤖 [Chat API] Calling AI with hasImages: ${hasImages}`);
-
-    // Generate character response with image support
+    // Generate character response
     const aiResponse = await aiService.generateCharacterResponse(
       recentMessages,
       character,
-      sessionContext,
-      hasImages
+      sessionContext
     );
 
     // Add character response to database
